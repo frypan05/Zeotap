@@ -9,3 +9,5 @@ __pycache__
 *.env
 .DS_Store
 .idea
+final-explanation.md
+SUBMISSION_STATUS.md

@@ -1,13 +1,13 @@
 global:
-  scrape_interval: 5s # Scrape every 5 seconds as per requirements
+    scrape_interval: 5s # Scrape every 5 seconds as per requirements
 
 scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
+    - job_name: 'prometheus'
+      static_configs:
+          - targets: ['localhost:9090']
 
-  - job_name: 'nextjs-backend'
-    # We will expose a /metrics endpoint in our Next.js backend later
-    metrics_path: '/api/metrics'
-    static_configs:
-      - targets: ['host.docker.internal:3001'] # 3001 will be our backend port
+    - job_name: 'nextjs-backend'
+      # We will expose a /metrics endpoint in our Next.js backend later
+      metrics_path: '/api/metrics'
+      static_configs:
+          - targets: ['192.168.1.3:3001'] # 3001 will be our backend port

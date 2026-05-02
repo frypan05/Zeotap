@@ -1,6 +1,7 @@
 // backend/src/app/api/ingest/route.ts
 import { NextResponse } from 'next/server';
 import { Kafka } from 'kafkajs';
+import { signalCounter } from '@/lib/metrics';
 
 // Initialize Kafka outside the handler so the connection is reused
 // (Crucial for high throughput)
@@ -20,14 +21,42 @@ async function connectProducer() {
     }
 }
 
+const WINDOW_SIZE_MS = 1000; // 1 second window
+const MAX_REQUESTS_PER_WINDOW = 10000;
+
+let requestCount = 0;
+let windowStartTime = Date.now();
+
+function checkRateLimit(): boolean {
+    const now = Date.now();
+    if (now - windowStartTime > WINDOW_SIZE_MS) {
+        // Reset window
+        windowStartTime = now;
+        requestCount = 0;
+    }
+
+    requestCount++;
+    return requestCount <= MAX_REQUESTS_PER_WINDOW;
+}
+
 export async function POST(req: Request) {
     try {
+
+        // 1. Enforce Rate Limit
+        if (!checkRateLimit()) {
+            return NextResponse.json(
+                { error: 'Rate limit exceeded. System is shedding load to prevent cascading failure.' },
+                { status: 429 }
+            );
+        }
+
         const body = await req.json();
 
         // Basic validation (In production, use Zod for this)
         if (!body.component_id || !body.severity) {
             return NextResponse.json({ error: 'Invalid signal payload' }, { status: 400 });
         }
+        signalCounter.inc();
 
         await connectProducer();
 
@@ -43,7 +72,7 @@ export async function POST(req: Request) {
         });
 
         // 202 Accepted: We received it, but haven't processed it fully yet (Async logic)
-        return NextResponse.json({ status: 'Accepted' }, { status: 202 });
+        return NextResponse.json({ success: true, message: 'Signal ingested' }, { status: 202 });
 
     } catch (error) {
         console.error("Ingestion Error:", error);

@@ -1,0 +1,10 @@
+[
+  {
+    "method": "Get",
+    "path": "/api/incidents",
+    "framework": "custom",
+    "source": "custom",
+    "line": 0,
+    "base_url": "http://localhost:3001"
+  }
+]

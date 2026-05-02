@@ -1,0 +1,55 @@
+// backend/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  CLOSED
+}
+
+// 1. The Source of Truth (RDBMS)
+model Incident {
+  id           String         @id @default(uuid())
+  component_id String         @unique // Only one active incident per component
+  severity     String
+  status       IncidentStatus @default(OPEN)
+  mttr_minutes Float?         // Mean Time To Repair
+
+  rca          Rca?           // One-to-one relationship with RCA
+  signals      SignalLog[]    // One-to-many relationship with Raw Signals
+
+  created_at   DateTime       @default(now())
+  updated_at   DateTime       @updatedAt
+}
+
+// 2. The RCA Form (Transactional Requirement)
+model Rca {
+  id               String   @id @default(uuid())
+  incident_id      String   @unique
+  root_cause       String
+  fix_applied      String
+  prevention_steps String
+  submitted_at     DateTime @default(now())
+
+  incident         Incident @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+}
+
+// 3. The Data Lake (NoSQL / JSONB)
+model SignalLog {
+  id           String    @id @default(uuid())
+  component_id String
+  incident_id  String?   // Can be null if the signal arrived before an incident was created
+  raw_payload  Json      // NoSQL JSON document storage
+  created_at   DateTime  @default(now())
+
+  incident     Incident? @relation(fields: [incident_id], references: [id])
+}

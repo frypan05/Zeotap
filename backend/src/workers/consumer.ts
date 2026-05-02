@@ -1,59 +1,72 @@
 // backend/src/workers/consumer.ts
 import { Kafka } from 'kafkajs';
 import { createClient } from 'redis';
+import { PrismaClient } from '@prisma/client';
 
-// 1. Initialize Redpanda (Kafka) Client
+const prisma = new PrismaClient();
+
 const kafka = new Kafka({
     clientId: 'ims-consumer-worker',
-    brokers: ['127.0.0.1:9094'], // Connecting from host to Docker
+    brokers: ['127.0.0.1:9094'],
 });
 
 const consumer = kafka.consumer({ groupId: 'incident-processing-group' });
-
-// 2. Initialize Redis Client
-const redis = createClient({
-    url: 'redis://127.0.0.1:6379'
-});
+const redis = createClient({ url: 'redis://127.0.0.1:6379' });
 
 redis.on('error', (err) => console.log('Redis Client Error', err));
 
 async function start() {
     await redis.connect();
-    console.log('🟢 Connected to Redis');
-
     await consumer.connect();
-    console.log('🟢 Connected to Redpanda');
-
     await consumer.subscribe({ topic: 'raw-signals', fromBeginning: true });
 
-    console.log('🎧 Listening for signals...');
+    console.log('🎧 Consumer worker running. Connected to Redis, Redpanda, and Postgres.');
 
     await consumer.run({
-        // We process messages in batches for high throughput
-        eachMessage: async ({ topic, partition, message }) => {
+        eachMessage: async ({ message }) => {
             if (!message.value) return;
 
             const signal = JSON.parse(message.value.toString());
             const componentId = signal.component_id;
 
-            // --- THE DEBOUNCING LOGIC ---
-            // Try to set a key in Redis. "NX" means "Only set if it Doesn't Exist".
-            // "EX 10" means "Expire this key in 10 seconds".
+            // 1. Debounce Logic
             const isNewIncident = await redis.set(`debounce:${componentId}`, 'active', {
                 NX: true,
                 EX: 10
             });
 
+            let activeIncident;
+
             if (isNewIncident) {
-                // This is the FIRST signal for this component in the last 10 seconds.
                 console.log(`🚨 NEW INCIDENT: [${signal.severity}] on ${componentId}`);
-                // TODO: In Phase 3, we will insert this into Postgres as a Work Item!
+
+                // Use upsert so if the component already has an OPEN incident, we don't crash
+                activeIncident = await prisma.incident.upsert({
+                    where: { component_id: componentId },
+                    update: {},
+                    create: {
+                        component_id: componentId,
+                        severity: signal.severity,
+                        status: 'OPEN'
+                    }
+                });
+
             } else {
-                // We've already seen this recently. It's a duplicate/ongoing issue.
-                // We skip creating an incident to save the database.
-                console.log(`💨 Debounced (Skipped): ${componentId}`);
-                // TODO: In Phase 3, we will dump this raw signal into the NoSQL audit log.
+                console.log(`💨 Debounced: ${componentId}`);
+                // Fetch the currently active incident so we can link the signal to it
+                activeIncident = await prisma.incident.findUnique({
+                    where: { component_id: componentId }
+                });
             }
+
+            // 2. The Data Lake Write (Log every signal, linked to the incident)
+            await prisma.signalLog.create({
+                data: {
+                    component_id: componentId,
+                    incident_id: activeIncident?.id || null,
+                    raw_payload: signal // Postgres JSONB handles this perfectly
+                }
+            });
         },
     });
 }
