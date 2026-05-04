@@ -196,7 +196,7 @@ API → Kafka (fast enqueue) → Return 202 → Consumer → DB (controlled pace
 
 ## Performance Metrics
 
-### Observed Throughput (From Your Run)
+### Observed Throughput (From My Run)
 ```
 Total Sent: 5000
 Success (202): ~3559
@@ -284,8 +284,8 @@ npx tsx src/workers/consumer.ts
 ### 6. Start Frontend
 ```bash
 cd frontend
-npm run dev -- -p 3000
-# Runs dashboard on http://localhost:3000
+npm run dev -- -p 3002
+# Runs dashboard on http://localhost:3002
 ```
 
 ### 7. Run Stress Test
@@ -298,7 +298,7 @@ python stress_test.py
 ```
 
 ### 8. View Dashboards
-- **Frontend**: http://localhost:3000 (Incident list)
+- **Frontend**: http://localhost:3002 (Incident list)
 - **Prometheus**: http://localhost:9090/metrics
 - **Grafana**: http://localhost:3000 (login: admin/admin)
 
